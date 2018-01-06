@@ -191,7 +191,7 @@ namespace BurstStratum.Services
         private async void OnMiningInfoChanged(object sender, EventArgs e)
         {
 
-            await clientSemaphore.WaitAsync();
+            await clientSemaphore.WaitAsync().ConfigureAwait(false);
             try
             {
                 var buffer = CreateMiningInfoBuffer(await _poller.GetCurrentMiningInfoAsync());
@@ -244,7 +244,10 @@ namespace BurstStratum.Services
                         catch
                         { // Ignored 
                         }
-                        clientSemaphore.Release();
+                        finally
+                        {
+                            clientSemaphore.Release();
+                        }
                     }
                     else
                     {
@@ -261,7 +264,7 @@ namespace BurstStratum.Services
         private async void OnClientDisconnected(object sender, EventArgs e)
         {
             var client = (TcpStratumClient)sender;
-            await clientSemaphore.WaitAsync();
+            await clientSemaphore.WaitAsync().ConfigureAwait(false);
             try
             {
                 clients.Remove(client);

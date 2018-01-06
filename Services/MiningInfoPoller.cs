@@ -23,17 +23,14 @@ namespace BurstStratum.Services
         private void OnMiningInfoChanged()
         {
             var miningInfoChanged = MiningInfoChanged;
-            miningInfoChanged?.BeginInvoke(this, new EventArgs(), iar =>
+            Task.Factory.StartNew(() =>
             {
-                try
+                try { MiningInfoChanged?.Invoke(this, EventArgs.Empty); }
+                catch
                 {
-                    miningInfoChanged?.EndInvoke(iar);
+                    // Ignored
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "An unhandled exception occured while processing event handler for mining status change.");
-                }
-            }, null);
+            });
         }
         public MiningInfoPoller(IConfiguration configuration, ILoggerFactory loggerFactory)
         {
