@@ -74,7 +74,7 @@ namespace BurstStratum.Services
                 _client = client;
                 _cancellationToken = cancellationToken;
                 _lastSend = DateTimeOffset.Now.ToUnixTimeSeconds();
-                _timer = new Timer(OnTimerTick, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+                _timer = new Timer(OnTimerTick, null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
             }
 
             private void OnTimerTick(object state)
