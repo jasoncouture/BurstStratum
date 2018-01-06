@@ -50,6 +50,11 @@ namespace BurstStratum.Controllers
         private async Task RunStratum(HttpContext context, WebSocket socket)
         {
             var startupMiningInfo = await _poller.GetCurrentMiningInfoAsync().ConfigureAwait(false);
+            await SendObjectAsync(socket, new
+            {
+                type = "miningInfo",
+                data = startupMiningInfo
+            });
             SemaphoreSlim socketSemaphore = new SemaphoreSlim(1, 1);
             long lastSend = DateTimeOffset.Now.ToUnixTimeSeconds();
             EventHandler eventHandler = async (s, e) =>
@@ -81,15 +86,20 @@ namespace BurstStratum.Controllers
                 {
                     await Task.Delay(30000);
                     await socketSemaphore.WaitAsync();
-                    try {
-                        if(DateTimeOffset.Now.ToUnixTimeSeconds() - lastSend > 30) {
-                            await SendObjectAsync(socket, new { 
+                    try
+                    {
+                        if (DateTimeOffset.Now.ToUnixTimeSeconds() - lastSend > 30)
+                        {
+                            await SendObjectAsync(socket, new
+                            {
                                 type = "heartbeat",
                                 data = new { timestamp = DateTimeOffset.Now.ToUnixTimeSeconds() }
                             });
                             lastSend = DateTimeOffset.Now.ToUnixTimeSeconds();
                         }
-                    } finally {
+                    }
+                    finally
+                    {
                         socketSemaphore.Release();
                     }
                 }
