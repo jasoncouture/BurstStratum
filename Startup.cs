@@ -31,6 +31,8 @@ namespace BurstStratum
             services.AddSingleton<MiningInfoPoller>()
             .AddSingleton<IHostedService>(resolver => resolver.GetRequiredService<MiningInfoPoller>())
             .AddSingleton<IMiningInfoPoller>(resolver => resolver.GetRequiredService<MiningInfoPoller>());
+            services.AddSingleton<TcpStratumServer>()
+                .AddSingleton<IHostedService>(resolver => resolver.GetRequiredService<TcpStratumServer>());
             
         }
 
