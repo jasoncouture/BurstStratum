@@ -79,7 +79,7 @@ namespace BurstStratum.Services
 
             private void OnTimerTick(object state)
             {
-                if (DateTimeOffset.Now.ToUnixTimeMilliseconds() - _lastSend > 30)
+                if (DateTimeOffset.Now.ToUnixTimeSeconds() - _lastSend > 30)
                 {
                     SendHeartbeat();
                 }
