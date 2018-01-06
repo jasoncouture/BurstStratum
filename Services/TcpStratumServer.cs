@@ -161,12 +161,15 @@ namespace BurstStratum.Services
                         // Ignored.
                     }
                 }
+                finally
+                {
+                    _socketSemaphore.Release();
+                }
             }
             private void SendHeartbeat()
             {
                 var buffer = CreateMessageBuffer(MessageType.Heartbeat, 1, CreateField(DateTimeOffset.Now.ToUnixTimeSeconds()));
                 SendBytes(buffer);
-                _lastSend = DateTimeOffset.Now.ToUnixTimeMilliseconds();
             }
             long _lastSend;
 
