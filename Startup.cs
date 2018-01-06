@@ -42,6 +42,8 @@ namespace BurstStratum
                 app.UseDeveloperExceptionPage();
             }
             app.UseMiddleware<BurstMiningMiddleware>();
+            app.UseWebSockets();
+            app.UseMiddleware<StratumWebsocketMiddleware>();
             app.UseMvc();
         }
     }

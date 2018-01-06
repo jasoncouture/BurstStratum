@@ -18,6 +18,23 @@ namespace BurstStratum.Services
     {
         private readonly ILogger _logger;
         private readonly IConfiguration _configuration;
+        public event EventHandler MiningInfoChanged;
+
+        private void OnMiningInfoChanged()
+        {
+            var miningInfoChanged = MiningInfoChanged;
+            miningInfoChanged?.BeginInvoke(this, new EventArgs(), iar =>
+            {
+                try
+                {
+                    miningInfoChanged?.EndInvoke(iar);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "An unhandled exception occured while processing event handler for mining status change.");
+                }
+            }, null);
+        }
         public MiningInfoPoller(IConfiguration configuration, ILoggerFactory loggerFactory)
         {
             _logger = loggerFactory.CreateLogger<MiningInfoPoller>();
@@ -34,6 +51,7 @@ namespace BurstStratum.Services
             {
                 _currentInfo = value;
                 firstMiningInfoSetCompletionSource.TrySetResult(null);
+                OnMiningInfoChanged();
             }
         }
         public async Task<MiningInfo> GetCurrentMiningInfoAsync()
@@ -63,7 +81,7 @@ namespace BurstStratum.Services
             while (!stopCancellationToken.IsCancellationRequested)
             {
 
-                
+
                 try
                 {
                     var currentOptions = GetSettings();
@@ -81,7 +99,7 @@ namespace BurstStratum.Services
                                 {
                                     var json = await response.Content.ReadAsStringAsync();
                                     var newInfo = JObject.Parse(json).ToObject<MiningInfo>();
-                                    if(newInfo == null) continue;
+                                    if (newInfo == null) continue;
                                     if (CurrentInfo == null || Compare(CurrentInfo, newInfo) > 0)
                                     {
                                         _logger.LogInformation($"New block {newInfo.Height} from: {item.Item1.ToLowerInvariant()}");
@@ -126,9 +144,12 @@ namespace BurstStratum.Services
             var baseUrl = new Uri(url);
             var target = new Uri(baseUrl, "/burst?requestType=getMiningInfo");
             await Task.Delay(TimeSpan.FromSeconds(pollIntervalSeconds), stopCancellationToken).ConfigureAwait(false);
-            try {
-            return await _client.GetAsync(target, stopCancellationToken).ConfigureAwait(false);
-            } catch (HttpRequestException ex) {
+            try
+            {
+                return await _client.GetAsync(target, stopCancellationToken).ConfigureAwait(false);
+            }
+            catch (HttpRequestException ex)
+            {
                 throw;
             }
         }
