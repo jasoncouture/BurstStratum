@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using BurstPool.Services;
+using BurstPool.Services.Interfaces;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.SpaServices.Webpack;
@@ -23,6 +25,7 @@ namespace BurstPool
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddMvc();
+            services.AddSingleton<IShareCalculator, ShareCalculator>();
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.

@@ -11,6 +11,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json.Linq;
+using StrangeSoft.Burst;
 using ResponseTuple = System.Tuple<string, System.Threading.Tasks.Task<System.Net.Http.HttpResponseMessage>>;
 namespace BurstStratum.Services
 {
