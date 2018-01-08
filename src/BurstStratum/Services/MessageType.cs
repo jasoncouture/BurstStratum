@@ -4,8 +4,9 @@ namespace BurstStratum.Services
     {
         Heartbeat = 0,
         MiningInfo = 1,
-        DeadlineSubmission = 2,
-        DeadlineSubmissionStatus = 3,
-        DeadlineSubmissionResult = 4
+        Greeting = 2,
+        DeadlineSubmission = 10,
+        DeadlineSubmissionStatus = 11,
+        DeadlineSubmissionResult = 12
     }
 }

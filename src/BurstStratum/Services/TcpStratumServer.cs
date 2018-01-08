@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using BurstStratum.Configuration;
@@ -15,6 +16,7 @@ namespace BurstStratum.Services
 {
     public class TcpStratumServer : BackgroundJob
     {
+        public const ulong StratumBinaryProtocolVersion = 1;
         private static byte[] CreateMessageBuffer(MessageType type, int fieldCount, byte[] fieldData)
         {
             byte[] buffer = new byte[sizeof(ushort) + 1 + fieldData.Length];
@@ -173,7 +175,11 @@ namespace BurstStratum.Services
             }
             long _lastSend;
 
-
+            internal void DisconnectClient()
+            {
+                if (!Connected) return;
+                Connected = false;
+            }
         }
         private ILogger _logger;
         private StratumSettings _settings;
@@ -190,20 +196,22 @@ namespace BurstStratum.Services
 
         private async void OnMiningInfoChanged(object sender, EventArgs e)
         {
-
+            List<TcpStratumClient> clientSnapshot = new List<TcpStratumClient>();
             await clientSemaphore.WaitAsync().ConfigureAwait(false);
             try
             {
-                var buffer = CreateMiningInfoBuffer(await _poller.GetCurrentMiningInfoAsync());
-                Parallel.ForEach(clients, client =>
-                {
-                    client.SendBytes(buffer);
-                });
+                clientSnapshot.AddRange(clients.ToArray());
+
             }
             finally
             {
                 clientSemaphore.Release();
             }
+            var buffer = CreateMiningInfoBuffer(await _poller.GetCurrentMiningInfoAsync());
+            Parallel.ForEach(clients, client =>
+            {
+                client.SendBytes(buffer);
+            });
         }
 
         List<TcpStratumClient> clients = new List<TcpStratumClient>();
@@ -225,7 +233,7 @@ namespace BurstStratum.Services
 
                 }
             });
-
+            List<Task> acceptTasks = new List<Task>();
             while (!stopCancellationToken.IsCancellationRequested)
             {
                 try
@@ -235,28 +243,72 @@ namespace BurstStratum.Services
                         var socket = await server.AcceptSocketAsync().ConfigureAwait(false);
                         _logger.LogInformation($"Accepted new connection");
                         var client = new TcpStratumClient(stopCancellationToken, socket);
-                        await clientSemaphore.WaitAsync().ConfigureAwait(false);
-                        try
+                        acceptTasks.Add(Task.Factory.StartNew(async () =>
                         {
-                            clients.Add(client);
-                            client.SendBytes(CreateMiningInfoBuffer(await _poller.GetCurrentMiningInfoAsync()));
-                        }
-                        catch
-                        { // Ignored 
-                        }
-                        finally
-                        {
-                            clientSemaphore.Release();
-                        }
+                            try
+                            {
+                                client.SendBytes(CreateMessageBuffer(MessageType.Greeting, 3, MergeFields(CreateField(StratumBinaryProtocolVersion), CreateField(Encoding.UTF8.GetBytes($"BurstStratum/{Environment.OSVersion.Platform}")), CreateField(DateTimeOffset.Now.ToUnixTimeSeconds()))));
+                                await clientSemaphore.WaitAsync(stopCancellationToken).ConfigureAwait(false);
+                                try
+                                {
+                                    clients.Add(client);
+                                }
+                                finally
+                                {
+                                    clientSemaphore.Release();
+                                }
+                                try
+                                {
+                                    client.SendBytes(CreateMiningInfoBuffer(await _poller.GetCurrentMiningInfoAsync()));
+                                }
+                                catch
+                                {
+                                    // Ignored.
+                                }
+                            }
+                            catch
+                            {
+                                // Ignored.
+                            }
+                        }).Unwrap());
+                        acceptTasks.RemoveAll(i => i.IsCompleted);
                     }
                     else
                     {
                         await Task.Delay(100);
                     }
                 }
-                catch
+                catch (OperationCanceledException) when (stopCancellationToken.IsCancellationRequested)
                 {
-
+                    // Shutdown gracefully when requested.
+                    try
+                    {
+                        server.Stop();
+                    }
+                    catch
+                    {
+                        // Ignored.
+                    }
+                    // Wait for all pending clients to be accepted.
+                    await Task.WhenAll(acceptTasks);
+                    List<TcpStratumClient> clientSnapshot = new List<TcpStratumClient>();
+                    // Grab a copy of all clients
+                    await clientSemaphore.WaitAsync();
+                    try
+                    {
+                        clientSnapshot.AddRange(clients.ToArray());
+                    }
+                    finally
+                    {
+                        clientSemaphore.Release();
+                    }
+                    // Close all connections.
+                    Parallel.ForEach(clientSnapshot, i => i.DisconnectClient());
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "An unhandled exception occured in the main server loop.");
                 }
             }
 
