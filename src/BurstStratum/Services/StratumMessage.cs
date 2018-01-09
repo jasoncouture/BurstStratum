@@ -33,7 +33,7 @@ namespace BurstStratum.Services
 
         public IStratumMessage AddField(byte[] data)
         {
-            _fields.Add(data);
+            _fields.Add(MessageBuffer.CreateField(data));
             return this;
         }
 
