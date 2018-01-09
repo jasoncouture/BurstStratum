@@ -1,4 +1,5 @@
-using BurstStratum.Models;
+
+using StrangeSoft.Burst;
 
 namespace BurstStratum.Services
 {

@@ -1,6 +1,6 @@
 using System;
 using System.Threading.Tasks;
-using BurstStratum.Models;
+using StrangeSoft.Burst;
 
 namespace BurstStratum.Services.Interfaces {
     public interface IMiningInfoPoller {

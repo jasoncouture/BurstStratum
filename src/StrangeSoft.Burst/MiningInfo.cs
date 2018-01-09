@@ -1,7 +1,7 @@
 using System;
 using Newtonsoft.Json;
 
-namespace BurstStratum.Models
+namespace StrangeSoft.Burst
 {
     public class MiningInfo : IComparable<MiningInfo>
     {
