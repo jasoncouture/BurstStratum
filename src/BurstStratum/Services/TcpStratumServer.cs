@@ -15,14 +15,6 @@ using StrangeSoft.Burst;
 
 namespace BurstStratum.Services
 {
-    public class MiningInfoStratumMessage : StratumMessage{
-        public MiningInfoStratumMessage(MiningInfo miningInfo) : base(MessageType.MiningInfo) {
-            this.AddField(miningInfo.GenerationSignature.ToByteArray())
-                .AddField(ulong.Parse(miningInfo.BaseTarget))
-                .AddField(ulong.Parse(miningInfo.Height))
-                .AddField(miningInfo.TargetDeadline);
-        }
-    }
     public class TcpStratumServer : BackgroundJob
     {
         
@@ -30,16 +22,6 @@ namespace BurstStratum.Services
         public static byte[] CreateMiningInfoBuffer(MiningInfo miningInfo)
         {
             return new MiningInfoStratumMessage(miningInfo).Build();
-            // return new StratumMessage(MessageType.MiningInfo)
-            //     .AddField(miningInfo.GenerationSignature.ToByteArray())
-            //     .AddField(ulong.Parse(miningInfo.BaseTarget))
-            //     .AddField(ulong.Parse(miningInfo.Height))
-            //     .AddField(miningInfo.TargetDeadline).Build();
-            // var baseTarget = MessageBuffer.CreateField(ulong.Parse(miningInfo.BaseTarget));
-            // var height = MessageBuffer.CreateField(ulong.Parse(miningInfo.Height));
-            // var target = MessageBuffer.CreateField(miningInfo.TargetDeadline);
-            // var genSig = MessageBuffer.CreateField(miningInfo.GenerationSignature.ToByteArray());
-            // return MessageBuffer.CreateMessageBuffer(MessageType.MiningInfo, 4, MessageBuffer.MergeFields(genSig, baseTarget, height, target));
         }
         public class TcpStratumClient
         {
