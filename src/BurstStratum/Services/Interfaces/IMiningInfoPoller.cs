@@ -7,4 +7,5 @@ namespace BurstStratum.Services.Interfaces {
         Task<MiningInfo> GetCurrentMiningInfoAsync(); 
         event EventHandler MiningInfoChanged;  
     }
+
 }

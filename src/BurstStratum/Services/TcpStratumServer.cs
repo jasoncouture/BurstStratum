@@ -15,58 +15,31 @@ using StrangeSoft.Burst;
 
 namespace BurstStratum.Services
 {
+    public class MiningInfoStratumMessage : StratumMessage{
+        public MiningInfoStratumMessage(MiningInfo miningInfo) : base(MessageType.MiningInfo) {
+            this.AddField(miningInfo.GenerationSignature.ToByteArray())
+                .AddField(ulong.Parse(miningInfo.BaseTarget))
+                .AddField(ulong.Parse(miningInfo.Height))
+                .AddField(miningInfo.TargetDeadline);
+        }
+    }
     public class TcpStratumServer : BackgroundJob
     {
-        public const ulong StratumBinaryProtocolVersion = 1;
-        private static byte[] CreateMessageBuffer(MessageType type, int fieldCount, byte[] fieldData)
-        {
-            byte[] buffer = new byte[sizeof(ushort) + 1 + fieldData.Length];
-            var fieldCountBytes = BitConverter.GetBytes((ushort)fieldCount);
-            if (!BitConverter.IsLittleEndian)
-                fieldCountBytes = fieldCountBytes.Reverse().ToArray();
-            Buffer.BlockCopy(fieldCountBytes, 0, buffer, 0, fieldCountBytes.Length);
-            buffer[2] = (byte)type;
-            Buffer.BlockCopy(fieldData, 0, buffer, 3, fieldData.Length);
-            return buffer;
-        }
-        private static byte[] MergeFields(params byte[][] data)
-        {
-            List<byte> buffer = new List<byte>();
-            foreach (var param in data)
-            {
-                buffer.AddRange(param);
-            }
-            return buffer.ToArray();
-        }
+        
+
         public static byte[] CreateMiningInfoBuffer(MiningInfo miningInfo)
         {
-            var baseTarget = CreateField(ulong.Parse(miningInfo.BaseTarget));
-            var height = CreateField(ulong.Parse(miningInfo.Height));
-            var target = CreateField(miningInfo.TargetDeadline);
-            var genSig = CreateField(miningInfo.GenerationSignature.ToByteArray());
-            return CreateMessageBuffer(MessageType.MiningInfo, 4, MergeFields(genSig, baseTarget, height, target));
-        }
-        private static byte[] CreateField(byte[] data)
-        {
-            var buffer = new byte[data.Length + 1];
-            buffer[0] = (byte)data.Length;
-            Buffer.BlockCopy(data, 0, buffer, 1, data.Length);
-            return buffer;
-        }
-        private static byte[] CreateField(long data)
-        {
-            var dataBytes = BitConverter.GetBytes(data);
-            if (!BitConverter.IsLittleEndian)
-                dataBytes = dataBytes.Reverse().ToArray();
-            return CreateField(dataBytes);
-        }
-
-        private static byte[] CreateField(ulong data)
-        {
-            var dataBytes = BitConverter.GetBytes(data);
-            if (!BitConverter.IsLittleEndian)
-                dataBytes = dataBytes.Reverse().ToArray();
-            return CreateField(dataBytes);
+            return new MiningInfoStratumMessage(miningInfo).Build();
+            // return new StratumMessage(MessageType.MiningInfo)
+            //     .AddField(miningInfo.GenerationSignature.ToByteArray())
+            //     .AddField(ulong.Parse(miningInfo.BaseTarget))
+            //     .AddField(ulong.Parse(miningInfo.Height))
+            //     .AddField(miningInfo.TargetDeadline).Build();
+            // var baseTarget = MessageBuffer.CreateField(ulong.Parse(miningInfo.BaseTarget));
+            // var height = MessageBuffer.CreateField(ulong.Parse(miningInfo.Height));
+            // var target = MessageBuffer.CreateField(miningInfo.TargetDeadline);
+            // var genSig = MessageBuffer.CreateField(miningInfo.GenerationSignature.ToByteArray());
+            // return MessageBuffer.CreateMessageBuffer(MessageType.MiningInfo, 4, MessageBuffer.MergeFields(genSig, baseTarget, height, target));
         }
         public class TcpStratumClient
         {
@@ -169,10 +142,15 @@ namespace BurstStratum.Services
                     _socketSemaphore.Release();
                 }
             }
+            public void SendMessage(IStratumMessage message) 
+            {
+                SendBytes(message.Build());
+            }
             private void SendHeartbeat()
             {
-                var buffer = CreateMessageBuffer(MessageType.Heartbeat, 1, CreateField(DateTimeOffset.Now.ToUnixTimeSeconds()));
-                SendBytes(buffer);
+                SendMessage(new HeartbeatStratumMessage());
+                // var buffer = CreateMessageBuffer(MessageType.Heartbeat, 1, CreateField(DateTimeOffset.Now.ToUnixTimeSeconds()));
+                // SendBytes(buffer);
             }
             long _lastSend;
 
@@ -248,7 +226,16 @@ namespace BurstStratum.Services
                         {
                             try
                             {
-                                client.SendBytes(CreateMessageBuffer(MessageType.Greeting, 3, MergeFields(CreateField(StratumBinaryProtocolVersion), CreateField(Encoding.UTF8.GetBytes($"BurstStratum/{Environment.OSVersion.Platform}")), CreateField(DateTimeOffset.Now.ToUnixTimeSeconds()))));
+                                client.SendMessage(new ServerGreetingStratumMessage());
+                                // client.SendMessage(new StratumMessage(MessageType.Greeting)
+                                //     .AddField(StratumBinaryProtocolVersion)
+                                //     .AddField($"BurstStratum/{Environment.OSVersion.Platform}")
+                                //     .AddField(DateTimeOffset.Now.ToUnixTimeSeconds())
+                                //     );
+                                // client.SendBytes(CreateMessageBuffer(MessageType.Greeting, 3, 
+                                // MergeFields(CreateField(StratumBinaryProtocolVersion), 
+                                // CreateField(Encoding.UTF8.GetBytes($"BurstStratum/{Environment.OSVersion.Platform}")), 
+                                // CreateField(DateTimeOffset.Now.ToUnixTimeSeconds()))));
                                 await clientSemaphore.WaitAsync(stopCancellationToken).ConfigureAwait(false);
                                 try
                                 {
