@@ -3,9 +3,11 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
+using BurstPool.Services.Interfaces;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
 
 namespace BurstPool.Controllers
@@ -14,9 +16,17 @@ namespace BurstPool.Controllers
     public class BurstController : Controller
     {
         private readonly IConfiguration _configuration;
-        public BurstController(IConfiguration configuration)
+        private readonly IShareCalculator _shareCalculator;
+        private readonly ILogger<BurstController> _logger;
+        private readonly IBlockHeightTracker _blockHeightTracker;
+        private readonly IShareTracker _shareTracker;
+        public BurstController(IConfiguration configuration, IShareCalculator shareCalculator, ILoggerFactory loggerFactory, IBlockHeightTracker blockHeightTracker, IShareTracker shareTracker)
         {
             _configuration = configuration;
+            _shareCalculator = shareCalculator;
+            _logger = loggerFactory.CreateLogger<BurstController>();
+            _blockHeightTracker = blockHeightTracker;
+            _shareTracker = shareTracker;
         }
         private static HttpClient _httpClient = new HttpClient();
         private Uri GetProxyUri()
@@ -40,7 +50,7 @@ namespace BurstPool.Controllers
             else
                 builder.Path = Request.Path;
             builder.Query = queryString.ToUriComponent();
-
+            _logger.LogInformation($"Forwarding request to {builder.Uri}");
             return builder.Uri;
         }
         private bool HasParameter(string parameter)
@@ -69,7 +79,7 @@ namespace BurstPool.Controllers
                     {
                         ModelState.AddModelError("", "This request must be sent as a POST request.");
                     }
-                    if (!long.TryParse(GetQueryParameter("blockHeight"), out var blockHeight))
+                    if (!ulong.TryParse(GetQueryParameter("blockHeight"), out var blockHeight))
                     {
                         ModelState.AddModelError("blockHeight", "Your miner must send blockHeight with the request to mine in this pool.");
                     }
@@ -96,6 +106,40 @@ namespace BurstPool.Controllers
 
                     if (!ModelState.IsValid)
                         return BadRequest(ModelState);
+                    var block = await _blockHeightTracker.GetCurrentBlockHeightAsync();
+                    if (blockHeight > 0)
+                    {
+                        bool firstWait = true;
+                        while (true)
+                        {
+                            block = await _blockHeightTracker.GetCurrentBlockHeightAsync();
+                            if (!ulong.TryParse(block.Height, out var newHeight))
+                            {
+                                await Task.Delay(250, HttpContext.RequestAborted).ConfigureAwait(false);
+                                continue;
+                            }
+                            if (newHeight == blockHeight)
+                            {
+                                break;
+                            }
+                            else if (newHeight > blockHeight || newHeight + 1 != blockHeight)
+                            {
+                                return Ok(new
+                                {
+                                    error = $"Your deadline is for a different block, your block: {blockHeight}, current block: {newHeight}"
+                                });
+                            }
+                            else
+                            {
+                                await Task.Delay(100);
+                            }
+                            if (firstWait)
+                            {
+                                _logger.LogInformation($"Client {HttpContext.Connection.RemoteIpAddress} submitted a nonce for a future block, blocking client until block {blockHeight} appears on the network.");
+                                firstWait = false;
+                            }
+                        }
+                    }
 
                     var queryString = new QueryString();
                     queryString = queryString
@@ -120,11 +164,19 @@ namespace BurstPool.Controllers
                             newContent.Headers.TryAddWithoutValidation(header.Key, header.Value);
                         }
                         response.Content = newContent;
+                        if (accountId != null && responseObject.TryGetValue("deadline", StringComparison.OrdinalIgnoreCase, out var deadlineToken))
+                        {
+                            var deadline = deadlineToken.ToObject<ulong>();
+                            var shares = _shareCalculator.GetShares(deadline, ulong.Parse(block.Height));
+                            _logger.LogInformation($"{accountId} earned {shares} shares.");
+                            await _shareTracker.RecordSharesAsync(accountId.Value, long.Parse(block.Height), shares, nonce, deadline).ConfigureAwait(false);
+                        }
                         // TODO: Read response object for deadline or error result
                         return ResponseMessage(response);
                     }
-                    catch
+                    catch(Exception ex)
                     {
+                        _logger.LogError(ex, "Failed submit nonce to server, or failed to record shares.");
                         return BadGateway();
                     }
                 default:

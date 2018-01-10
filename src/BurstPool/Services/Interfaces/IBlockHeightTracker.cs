@@ -1,10 +1,13 @@
+using System;
 using System.Threading;
 using System.Threading.Tasks;
-using BurstPool.Models;
+using StrangeSoft.Burst;
+
 namespace BurstPool.Services.Interfaces
 {
     public interface IBlockHeightTracker
     {
-         Task<MiningInfo> GetCurrentBlockHeightAsync(CancellationToken cancellationToken = default(CancellationToken));
+        event EventHandler MiningInfoChanged;
+        Task<MiningInfo> GetCurrentBlockHeightAsync(CancellationToken cancellationToken = default(CancellationToken));
     }
 }

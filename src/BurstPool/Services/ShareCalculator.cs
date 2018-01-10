@@ -12,14 +12,14 @@ namespace BurstPool.Services
             return 240m / (decimal)deadline;
         }
         // Again, don't actually care if this is right, it's right for the purpose of distributing shares.
-        private decimal GetNetworkDifficulty(ulong baseTarget)
+        public decimal GetDifficulty(ulong baseTarget)
         {
             return GenesisBlockDifficulty / (decimal)baseTarget;
         }
         // Tie the two together.
         public decimal GetShares(ulong deadline, ulong baseTarget)
         {
-            return GetBaseDeadlineScore(deadline) * GetNetworkDifficulty(baseTarget);
+            return GetBaseDeadlineScore(deadline) * GetDifficulty(baseTarget);
         }
     }
 }

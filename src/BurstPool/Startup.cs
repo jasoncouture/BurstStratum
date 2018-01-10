@@ -2,11 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using BurstPool.Database;
 using BurstPool.Services;
 using BurstPool.Services.Interfaces;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.SpaServices.Webpack;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -25,12 +27,21 @@ namespace BurstPool
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddMvc();
+            services.AddDbContextPool<PoolContext>(options => options.UseMySql(Configuration.GetConnectionString("Default")));
+            services.AddBackgroundJobSingleton<IBlockHeightTracker, BlockHeightTracker>();
             services.AddSingleton<IShareCalculator, ShareCalculator>();
+            services.AddScoped<IShareTracker, ShareTracker>();
+            services.AddBackgroundJobSingleton<PayoutService>();
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
         public void Configure(IApplicationBuilder app, IHostingEnvironment env)
         {
+
+            using (var serviceScope = app.ApplicationServices.GetRequiredService<IServiceScopeFactory>().CreateScope())
+            {
+                serviceScope.ServiceProvider.GetRequiredService<PoolContext>().Database.Migrate();
+            }
             if (env.IsDevelopment())
             {
                 app.UseDeveloperExceptionPage();
