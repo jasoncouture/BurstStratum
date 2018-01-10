@@ -31,7 +31,7 @@ namespace BurstPool
             services.AddBackgroundJobSingleton<IBlockHeightTracker, BlockHeightTracker>();
             services.AddSingleton<IShareCalculator, ShareCalculator>();
             services.AddScoped<IShareTracker, ShareTracker>();
-            services.AddBackgroundJobSingleton<PayoutService>();
+            //services.AddBackgroundJobSingleton<PayoutService>();
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.

@@ -33,6 +33,10 @@ namespace BurstPool.Controllers
         {
             return GetProxyUri(Request.QueryString);
         }
+        private Uri GetProxyUri(Uri baseUri)
+        {
+            return GetProxyUri(baseUri, Request.QueryString);
+        }
         private Uri GetProxyUri(QueryString queryString)
         {
             var wallet = _configuration.GetSection("Pool")?.GetValue<string>("TrustedWallet");
@@ -70,9 +74,15 @@ namespace BurstPool.Controllers
         [HttpGet]
         public async Task<IActionResult> RespondAsync(string requestType)
         {
+            Uri baseUri = null;
             switch (requestType)
             {
                 case "getMiningInfo":
+                    var stratum = _configuration.GetSection("Pool").GetValue<string>("Stratum");
+                    if (stratum != null && Uri.TryCreate(stratum, UriKind.Absolute, out var stratumUri))
+                    {
+                        baseUri = stratumUri;
+                    }
                     goto default;
                 case "submitNonce":
                     if (!HttpMethods.IsPost(Request.Method))
@@ -174,13 +184,13 @@ namespace BurstPool.Controllers
                         // TODO: Read response object for deadline or error result
                         return ResponseMessage(response);
                     }
-                    catch(Exception ex)
+                    catch (Exception ex)
                     {
                         _logger.LogError(ex, "Failed submit nonce to server, or failed to record shares.");
                         return BadGateway();
                     }
                 default:
-                    var request = CreateProxyHttpRequest(Request.HttpContext, GetProxyUri());
+                    var request = CreateProxyHttpRequest(Request.HttpContext, baseUri == null ? GetProxyUri() : GetProxyUri(baseUri));
                     try
                     {
                         var response = await _httpClient.SendAsync(request, Request.HttpContext.RequestAborted);
