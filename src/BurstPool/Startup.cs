@@ -56,7 +56,7 @@ namespace BurstPool
             }
 
             app.UseStaticFiles();
-
+            app.UseWebSockets();
             app.UseMvc(routes =>
             {
                 routes.MapRoute(

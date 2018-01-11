@@ -2,12 +2,14 @@ using System;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Text;
 using System.Threading.Tasks;
 using BurstPool.Services.Interfaces;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace BurstPool.Controllers
@@ -132,7 +134,7 @@ namespace BurstPool.Controllers
                             {
                                 break;
                             }
-                            else if (newHeight > blockHeight || newHeight + 1 != blockHeight)
+                            else if (newHeight > blockHeight || (newHeight + _configuration.GetSection("Pool").GetValue<ulong>("MaximumPremineBlocks", 0L)) < blockHeight)
                             {
                                 return Ok(new
                                 {
@@ -158,10 +160,12 @@ namespace BurstPool.Controllers
                         .Add("blockHeight", blockHeight.ToString());
                     if (accountId != null)
                         queryString = queryString.Add("accountId", accountId.Value.ToString());
-                    secretPhrase = secretPhrase ?? GetPoolSecretPhrase();
-                    if (!string.IsNullOrWhiteSpace(secretPhrase))
-                        queryString = queryString.Add("secretPhrase", secretPhrase ?? GetPoolSecretPhrase());
+                    var poolSecret = GetPoolSecretPhrase();
+                    secretPhrase = secretPhrase ?? poolSecret;
 
+                    if (!string.IsNullOrWhiteSpace(secretPhrase))
+                        queryString = queryString.Add("secretPhrase", secretPhrase ?? poolSecret);
+                    bool isPoolUser = string.IsNullOrWhiteSpace(secretPhrase) || (!string.IsNullOrWhiteSpace(poolSecret) && string.Equals(poolSecret, secretPhrase));
                     try
                     {
                         var response = await _httpClient.SendAsync(CreateProxyHttpRequest(HttpContext, GetProxyUri(queryString)), HttpContext.RequestAborted).ConfigureAwait(false);
@@ -178,8 +182,15 @@ namespace BurstPool.Controllers
                         {
                             var deadline = deadlineToken.ToObject<ulong>();
                             var shares = _shareCalculator.GetShares(deadline, ulong.Parse(block.Height));
-                            _logger.LogInformation($"{accountId} earned {shares} shares.");
-                            await _shareTracker.RecordSharesAsync(accountId.Value, long.Parse(block.Height), shares, nonce, deadline).ConfigureAwait(false);
+                            if (isPoolUser)
+                            {
+                                _logger.LogInformation($"{accountId} earned {shares} shares.");
+                                await _shareTracker.RecordSharesAsync(accountId.Value, long.Parse(block.Height), shares, nonce, deadline).ConfigureAwait(false);
+                            }
+                            else
+                            {
+                                _logger.LogInformation($"{accountId} earned {shares} shares, but they are not a member of the pool. Not recording.");
+                            }
                         }
                         // TODO: Read response object for deadline or error result
                         return ResponseMessage(response);
