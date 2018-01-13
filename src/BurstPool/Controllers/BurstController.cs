@@ -31,6 +31,20 @@ namespace BurstPool.Controllers
             _shareTracker = shareTracker;
         }
         private static HttpClient _httpClient = new HttpClient();
+        private Uri GetProxyUri(string requestType)
+        {
+            return GetProxyUri(GetUrlOverride(requestType));
+        }
+        private Uri GetUrlOverride(string requestType)
+        {
+            var targets = _configuration.GetSection("Pool").GetSection("Wallets").GetSection(requestType).AsEnumerable().Select(i => i.Value).Where(i => !string.IsNullOrWhiteSpace(i)).ToArray();
+            if (targets.Length == 0)
+                targets = _configuration.GetSection("Pool").GetSection("Wallets").GetSection("Default").AsEnumerable().Select(i => i.Value).Where(i => !string.IsNullOrWhiteSpace(i)).ToArray().ToArray();
+            if (targets.Length == 0)
+                targets = new string[] { _configuration.GetSection("Pool").GetValue<string>("TrustedWallet") };
+            var target = targets.Where(i => !string.IsNullOrWhiteSpace(i)).Select(i => i.Trim()).OrderBy(i => Guid.NewGuid()).FirstOrDefault();
+            return new Uri(target);
+        }
         private Uri GetProxyUri()
         {
             return GetProxyUri(Request.QueryString);
@@ -192,7 +206,6 @@ namespace BurstPool.Controllers
                                 _logger.LogInformation($"{accountId} earned {shares} shares, but they are not a member of the pool. Not recording.");
                             }
                         }
-                        // TODO: Read response object for deadline or error result
                         return ResponseMessage(response);
                     }
                     catch (Exception ex)
@@ -201,7 +214,8 @@ namespace BurstPool.Controllers
                         return BadGateway();
                     }
                 default:
-                    var request = CreateProxyHttpRequest(Request.HttpContext, baseUri == null ? GetProxyUri() : GetProxyUri(baseUri));
+                    baseUri = baseUri == null ? GetProxyUri(requestType) : GetProxyUri(baseUri);
+                    var request = CreateProxyHttpRequest(Request.HttpContext, baseUri);
                     try
                     {
                         var response = await _httpClient.SendAsync(request, Request.HttpContext.RequestAborted);
@@ -211,8 +225,6 @@ namespace BurstPool.Controllers
                     {
                         return BadGateway();
                     }
-
-
             }
         }
 
@@ -228,7 +240,7 @@ namespace BurstPool.Controllers
 
         private string GetPoolSecretPhrase()
         {
-            return _configuration.GetSection("pool")?.GetValue<string>("PoolSecretPhrase");
+            return _configuration.GetSection("Pool")?.GetValue<string>("PoolSecretPhrase");
         }
 
         protected IActionResult ResponseMessage(HttpResponseMessage message)

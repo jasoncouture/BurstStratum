@@ -64,7 +64,7 @@ namespace BurstPool.Controllers
                         height = height - 360; // Rewind 360 blocks.
                         var rawData = await context.Shares.Where(i => i.AccountId == id && i.BlockId >= height).GroupBy(i => i.BlockId).Select(x => x.OrderByDescending(i => i.ShareValue).First()).ToListAsync(httpContext.RequestAborted).ConfigureAwait(false);
                         var data = rawData.Select(i => i.ShareValue).ToList();
-                        var averageShares = data.DefaultIfEmpty(0m).Average();
+                        var averageShares = data.DefaultIfEmpty(0m).Sum() / 360m;;
                         var bestShare = data.DefaultIfEmpty(0m).Max();
                         var worstShare = data.DefaultIfEmpty(0m).Min();
                         var bestDeadline = rawData.OrderBy(i => i.Deadline).FirstOrDefault();
