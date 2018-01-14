@@ -16,16 +16,19 @@ namespace StratumClient
 {
     public class Startup
     {
-        public Startup(IConfiguration configuration)
+        public Startup(IConfiguration configuration, ILoggerFactory loggerFactory)
         {
             Configuration = configuration;
+            Logger = loggerFactory.CreateLogger("Startup");
         }
-
+        public ILogger Logger { get; }
         public IConfiguration Configuration { get; }
 
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
+            Logger.LogInformation($"Stratum Client Proxy - {DateTime.Now.Year} Jason Couture");
+            Logger.LogInformation($"Donations appreciated at: BURST-49LB-USA3-LWZJ-9PCJP");
             services.AddMvc();
             services.AddLogging();
             services.AddBackgroundJobSingleton<IStratum, StratumService>();

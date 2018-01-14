@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.SpaServices.Webpack;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using StrangeSoft.Burst;
 
 namespace BurstPool
 {
@@ -30,6 +31,8 @@ namespace BurstPool
             services.AddDbContextPool<PoolContext>(options => options.UseMySql(Configuration.GetConnectionString("Default")));
             services.AddBackgroundJobSingleton<IBlockHeightTracker, BlockHeightTracker>();
             services.AddSingleton<IShareCalculator, ShareCalculator>();
+            services.AddSingleton<IBurstUriFactory, BurstUriFactory>();
+            services.AddSingleton<IBurstApi, BurstApi>();
             services.AddScoped<IShareTracker, ShareTracker>();
             //services.AddBackgroundJobSingleton<PayoutService>();
         }

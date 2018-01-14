@@ -22,57 +22,18 @@ namespace BurstPool.Controllers
         private readonly ILogger<BurstController> _logger;
         private readonly IBlockHeightTracker _blockHeightTracker;
         private readonly IShareTracker _shareTracker;
-        public BurstController(IConfiguration configuration, IShareCalculator shareCalculator, ILoggerFactory loggerFactory, IBlockHeightTracker blockHeightTracker, IShareTracker shareTracker)
+        private readonly IBurstUriFactory _uriFactory;
+
+        public BurstController(IConfiguration configuration, IShareCalculator shareCalculator, ILoggerFactory loggerFactory, IBlockHeightTracker blockHeightTracker, IShareTracker shareTracker, IBurstUriFactory uriFactory)
         {
             _configuration = configuration;
             _shareCalculator = shareCalculator;
             _logger = loggerFactory.CreateLogger<BurstController>();
             _blockHeightTracker = blockHeightTracker;
             _shareTracker = shareTracker;
+            _uriFactory = uriFactory;
         }
         private static HttpClient _httpClient = new HttpClient();
-        private Uri GetProxyUri(string requestType)
-        {
-            return GetProxyUri(GetUrlOverride(requestType));
-        }
-        private Uri GetUrlOverride(string requestType)
-        {
-            var targets = _configuration.GetSection("Pool").GetSection("Wallets").GetSection(requestType).AsEnumerable().Select(i => i.Value).Where(i => !string.IsNullOrWhiteSpace(i)).ToArray();
-            if (targets.Length == 0)
-                targets = _configuration.GetSection("Pool").GetSection("Wallets").GetSection("Default").AsEnumerable().Select(i => i.Value).Where(i => !string.IsNullOrWhiteSpace(i)).ToArray().ToArray();
-            if (targets.Length == 0)
-                targets = new string[] { _configuration.GetSection("Pool").GetValue<string>("TrustedWallet") };
-            var target = targets.Where(i => !string.IsNullOrWhiteSpace(i)).Select(i => i.Trim()).OrderBy(i => Guid.NewGuid()).FirstOrDefault();
-            return new Uri(target);
-        }
-        private Uri GetProxyUri()
-        {
-            return GetProxyUri(Request.QueryString);
-        }
-        private Uri GetProxyUri(Uri baseUri)
-        {
-            return GetProxyUri(baseUri, Request.QueryString);
-        }
-        private Uri GetProxyUri(QueryString queryString)
-        {
-            var wallet = _configuration.GetSection("Pool")?.GetValue<string>("TrustedWallet");
-            return GetProxyUri(new Uri(wallet), queryString);
-        }
-        private Uri GetProxyUri(Uri target, QueryString queryString)
-        {
-            var builder = new UriBuilder();
-            builder.Scheme = target.Scheme;
-            builder.Host = target.DnsSafeHost;
-            if (!target.IsDefaultPort)
-                builder.Port = target.Port;
-            if (!string.IsNullOrWhiteSpace(target.AbsolutePath) && target.AbsolutePath != "/")
-                builder.Path = new PathString(target.AbsolutePath).Add(Request.Path);
-            else
-                builder.Path = Request.Path;
-            builder.Query = queryString.ToUriComponent();
-            _logger.LogInformation($"Forwarding request to {builder.Uri}");
-            return builder.Uri;
-        }
         private bool HasParameter(string parameter)
         {
             return GetQueryParameter(parameter) != null;
@@ -93,13 +54,6 @@ namespace BurstPool.Controllers
             Uri baseUri = null;
             switch (requestType)
             {
-                case "getMiningInfo":
-                    var stratum = _configuration.GetSection("Pool").GetValue<string>("Stratum");
-                    if (stratum != null && Uri.TryCreate(stratum, UriKind.Absolute, out var stratumUri))
-                    {
-                        baseUri = stratumUri;
-                    }
-                    goto default;
                 case "submitNonce":
                     if (!HttpMethods.IsPost(Request.Method))
                     {
@@ -182,7 +136,7 @@ namespace BurstPool.Controllers
                     bool isPoolUser = string.IsNullOrWhiteSpace(secretPhrase) || (!string.IsNullOrWhiteSpace(poolSecret) && string.Equals(poolSecret, secretPhrase));
                     try
                     {
-                        var response = await _httpClient.SendAsync(CreateProxyHttpRequest(HttpContext, GetProxyUri(queryString)), HttpContext.RequestAborted).ConfigureAwait(false);
+                        var response = await _httpClient.SendAsync(CreateProxyHttpRequest(HttpContext, _uriFactory.GetUri(requestType, "/burst", Request.QueryString)), HttpContext.RequestAborted).ConfigureAwait(false);
                         var responseStringJson = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                         var responseObject = JObject.Parse(responseStringJson);
                         var newContent = new StringContent(responseStringJson);
@@ -214,7 +168,7 @@ namespace BurstPool.Controllers
                         return BadGateway();
                     }
                 default:
-                    baseUri = baseUri == null ? GetProxyUri(requestType) : GetProxyUri(baseUri);
+                    baseUri = _uriFactory.GetUri(requestType, "/burst", Request.QueryString);
                     var request = CreateProxyHttpRequest(Request.HttpContext, baseUri);
                     try
                     {

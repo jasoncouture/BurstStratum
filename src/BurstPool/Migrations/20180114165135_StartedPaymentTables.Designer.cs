@@ -11,9 +11,10 @@ using System;
 namespace BurstPool.Migrations
 {
     [DbContext(typeof(PoolContext))]
-    partial class PoolContextModelSnapshot : ModelSnapshot
+    [Migration("20180114165135_StartedPaymentTables")]
+    partial class StartedPaymentTables
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

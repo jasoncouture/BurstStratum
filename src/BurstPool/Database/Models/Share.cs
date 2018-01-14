@@ -11,6 +11,29 @@ namespace BurstPool.Database.Models
         public long Height { get; set; }
         public decimal Amount { get; set; }
     }
+
+    public class AccountBalance
+    {
+        [Key, ForeignKey(nameof(Account)), DatabaseGenerated(DatabaseGeneratedOption.None)]
+        public ulong AccountId { get; set; }
+        public virtual Account Account { get; set; }
+        public decimal PendingBalance { get; set; }
+        public virtual List<AccountTransaction> Transactions { get; set; } = new List<AccountTransaction>();
+    }
+
+    public class AccountTransaction
+    {
+        [Key, DatabaseGenerated(DatabaseGeneratedOption.None)]
+        public string Id { get; set; } = Guid.NewGuid().ToString("n");
+        [ForeignKey(nameof(Account))]
+        public ulong AccountId { get; set; }
+        public virtual Account Account { get; set; }
+        [ForeignKey(nameof(Block))]
+        public long BlockId { get; set; }
+        public virtual Block Block { get; set; }
+        public decimal Adjustment { get; set; }
+    }
+
     public class Share
     {
         [DatabaseGenerated(DatabaseGeneratedOption.None), Key]

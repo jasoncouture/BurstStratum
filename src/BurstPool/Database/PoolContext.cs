@@ -10,7 +10,9 @@ namespace BurstPool.Database
         public DbSet<Account> Accounts { get; set; }
         public DbSet<Block> Blocks { get; set; }
         public DbSet<Earnings> Earnings { get; set; }
-        
+        public DbSet<AccountBalance> AccountBalances { get; set; }
+        public DbSet<AccountTransaction> AccountTransactions { get; set; }
+
         // protected override void OnModelCreating(ModelBuilder modelBuilder)
         // {
         //     modelBuilder.Entity<Lock>()
