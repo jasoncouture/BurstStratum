@@ -32,7 +32,7 @@ namespace BurstPool.Services
                         _logger.LogInformation("Payouts are disabled. (Pool.EnablePayoutCalculation is not set to true)");
                         continue;
                     }
-                    var poolBurstAccount = _configuration.GetSection("Pool").GetValue<string>("PoolAccount");
+                    var poolBurstAccount = _configuration.GetSection("Pool").GetValue<string>("Account");
                     if(string.IsNullOrWhiteSpace(poolBurstAccount)) {
                         _logger.LogError("Pool payment calculations are enabled, but the pool account is not set. Please set Pool.PoolAccount to either the numeric account, or the BURST address for the pool.");
                         continue;

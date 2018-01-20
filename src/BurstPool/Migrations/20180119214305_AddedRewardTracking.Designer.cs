@@ -11,9 +11,10 @@ using System;
 namespace BurstPool.Migrations
 {
     [DbContext(typeof(PoolContext))]
-    partial class PoolContextModelSnapshot : ModelSnapshot
+    [Migration("20180119214305_AddedRewardTracking")]
+    partial class AddedRewardTracking
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -27,27 +28,6 @@ namespace BurstPool.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("Accounts");
-                });
-
-            modelBuilder.Entity("BurstPool.Database.Models.AccountAverageShareHistory", b =>
-                {
-                    b.Property<string>("Id");
-
-                    b.Property<ulong>("AccountId");
-
-                    b.Property<decimal>("AverageShares");
-
-                    b.Property<DateTimeOffset>("Created");
-
-                    b.Property<long>("Height");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AccountId");
-
-                    b.HasIndex("Height");
-
-                    b.ToTable("AccountAverageShareHistory");
                 });
 
             modelBuilder.Entity("BurstPool.Database.Models.AccountBalance", b =>
@@ -105,11 +85,7 @@ namespace BurstPool.Migrations
 
                     b.Property<bool>("IsPoolMember");
 
-                    b.Property<bool>("PaymentsCalculated");
-
                     b.Property<string>("PoolTransactionId");
-
-                    b.Property<bool>("SharesAveraged");
 
                     b.Property<ulong>("Winner");
 
@@ -177,19 +153,6 @@ namespace BurstPool.Migrations
                     b.HasIndex("BlockId");
 
                     b.ToTable("Shares");
-                });
-
-            modelBuilder.Entity("BurstPool.Database.Models.AccountAverageShareHistory", b =>
-                {
-                    b.HasOne("BurstPool.Database.Models.Account", "Account")
-                        .WithMany("AverageShareHistory")
-                        .HasForeignKey("AccountId")
-                        .OnDelete(DeleteBehavior.Cascade);
-
-                    b.HasOne("BurstPool.Database.Models.Block", "Block")
-                        .WithMany()
-                        .HasForeignKey("Height")
-                        .OnDelete(DeleteBehavior.Cascade);
                 });
 
             modelBuilder.Entity("BurstPool.Database.Models.AccountBalance", b =>

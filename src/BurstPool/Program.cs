@@ -8,14 +8,26 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System.Net;
+using Microsoft.Extensions.DependencyInjection;
+using BurstPool.Database;
+using Microsoft.EntityFrameworkCore;
 
 namespace BurstPool
 {
-    public class Program
+    public static class Program
     {
+        public static IWebHost MigrateDatabase(this IWebHost webHost)
+        {
+            using (var serviceScope = webHost.Services.GetRequiredService<IServiceScopeFactory>().CreateScope())
+            {
+
+                serviceScope.ServiceProvider.GetRequiredService<PoolContext>().Database.Migrate();
+            }
+            return webHost;
+        }
         public static void Main(string[] args)
         {
-            BuildWebHost(args).Run();
+            BuildWebHost(args).MigrateDatabase().Run();
         }
 
         public static IWebHost BuildWebHost(string[] args) =>

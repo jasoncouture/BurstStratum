@@ -30,6 +30,8 @@ namespace BurstPool
             services.AddMvc();
             services.AddDbContextPool<PoolContext>(options => options.UseMySql(Configuration.GetConnectionString("Default")));
             services.AddBackgroundJobSingleton<IBlockHeightTracker, BlockHeightTracker>();
+            services.AddBackgroundJobSingleton<AverageShareCalculatorService>();
+            services.AddBackgroundJobSingleton<BlockStateTracker>();
             services.AddSingleton<IShareCalculator, ShareCalculator>();
             services.AddSingleton<IBurstUriFactory, BurstUriFactory>();
             services.AddSingleton<IBurstApi, BurstApi>();
@@ -40,11 +42,6 @@ namespace BurstPool
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
         public void Configure(IApplicationBuilder app, IHostingEnvironment env)
         {
-
-            using (var serviceScope = app.ApplicationServices.GetRequiredService<IServiceScopeFactory>().CreateScope())
-            {
-                serviceScope.ServiceProvider.GetRequiredService<PoolContext>().Database.Migrate();
-            }
             if (env.IsDevelopment())
             {
                 app.UseDeveloperExceptionPage();
