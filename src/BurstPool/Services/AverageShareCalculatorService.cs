@@ -102,7 +102,7 @@ namespace BurstPool.Services
             {
 
                 if (await db.AccountAverageShareHistory.AnyAsync(x => x.AccountId == account && x.Height == height, cancellationToken)) continue;
-                var shares = await db.Shares.Where(i => i.BlockId <= height && i.BlockId > oldestHeight).Select(i => new { i.BlockId, i.ShareValue }).ToListAsync(cancellationToken);
+                var shares = await db.Shares.Where(i => i.AccountId == account && i.BlockId <= height && i.BlockId > oldestHeight).Select(i => new { i.BlockId, i.ShareValue }).ToListAsync(cancellationToken);
                 var average = shares.GroupBy(i => i.BlockId).Select(x => x.Max(t => t.ShareValue)).Sum() / period;
                 Logger.LogInformation("Account {accountId}, computed average shares {average} for block {blockHeight}", account, average, height);
                 db.AccountAverageShareHistory.Add(new AccountAverageShareHistory()
