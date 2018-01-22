@@ -1,6 +1,7 @@
 using System.Threading.Tasks;
 using BurstPool.Database;
 using BurstPool.Database.Models;
+using BurstPool.Messages;
 using BurstPool.Services.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -217,9 +218,11 @@ namespace BurstPool.Services
     public class ShareTracker : IShareTracker
     {
         private readonly PoolContext _context;
-        public ShareTracker(PoolContext context)
+        private readonly IMessenger _messenger;
+        public ShareTracker(PoolContext context, IMessenger messenger)
         {
             _context = context;
+            _messenger = messenger;
         }
         public async Task RecordSharesAsync(ulong accountId, long block, decimal shares, ulong nonce, ulong deadline)
         {
@@ -249,6 +252,9 @@ namespace BurstPool.Services
                 await _context.SaveChangesAsync().ConfigureAwait(false);
                 transaction.Commit();
             }
+            var message = new DeadlineMessage(accountId, nonce, (long)deadline, shares);
+            await _messenger.PublishAsync($"Public.Share.Block.Accepted.{block}", data: message);
+            await _messenger.PublishAsync($"Public.Share.Account.Accepted.{accountId}", data: message);
         }
     }
 }

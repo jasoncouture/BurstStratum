@@ -23,12 +23,15 @@ namespace BurstPool.Services
         private readonly ILogger _logger;
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly IShareCalculator _shareCalculator;
-        public BlockHeightTracker(IConfiguration configuration, ILoggerFactory loggerFactory, IServiceScopeFactory scopeFactory, IShareCalculator shareCalculator)
+        private readonly IMessenger _messenger;
+
+        public BlockHeightTracker(IConfiguration configuration, ILoggerFactory loggerFactory, IServiceScopeFactory scopeFactory, IShareCalculator shareCalculator, IMessenger messenger)
         {
             _configuration = configuration;
             _logger = loggerFactory.CreateLogger<BlockHeightTracker>();
             _scopeFactory = scopeFactory;
             _shareCalculator = shareCalculator;
+            _messenger = messenger;
         }
         public async Task<MiningInfo> GetCurrentBlockHeightAsync(CancellationToken cancellationToken = default(CancellationToken))
         {
@@ -124,6 +127,7 @@ namespace BurstPool.Services
                     await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                     transaction.Commit();
                     _logger.LogInformation($"Added block {newBlock.Height} with difficulty {newBlock.Difficulty}");
+                    _messenger.Publish("Public.Block.Update", this, miningInfo);
                 }
             }
         }

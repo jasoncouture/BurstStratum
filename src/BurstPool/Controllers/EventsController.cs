@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net.WebSockets;
+using System.Threading;
 using System.Threading.Tasks;
 using BurstPool.Database;
 using BurstPool.Services;
@@ -9,6 +11,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Newtonsoft.Json.Linq;
 
 namespace BurstPool.Controllers
 {
@@ -17,15 +20,195 @@ namespace BurstPool.Controllers
     {
         private IServiceScopeFactory _scopeFactory;
         private IBlockHeightTracker _blockHeightTracker;
-        public EventsController(IServiceScopeFactory scopeFactory, IBlockHeightTracker blockHeightTracker)
+        private IMessenger _messenger;
+        public EventsController(IServiceScopeFactory scopeFactory, IBlockHeightTracker blockHeightTracker, IMessenger messenger)
         {
             _scopeFactory = scopeFactory;
             _blockHeightTracker = blockHeightTracker;
+            _messenger = messenger;
         }
+        public class SubscriptionResult : WebSocketResult
+        {
+            private readonly IMessenger _messenger;
 
+            private sealed class JoinedDisposable : IDisposable
+            {
+                Dictionary<string, IDisposable> _disposables = new Dictionary<string, IDisposable>(StringComparer.OrdinalIgnoreCase);
+                public JoinedDisposable()
+                {
+                }
+                public void Remove(string key)
+                {
+                    if (key == null) throw new ArgumentNullException(nameof(key));
+                    lock (_disposables)
+                    {
+                        if (_disposables.ContainsKey(key))
+                        {
+                            try
+                            {
+                                _disposables[key]?.Dispose();
+                            }
+                            catch
+                            {
+                                // Ignored.
+                            }
+                            _disposables.Remove(key);
+                        }
+                    }
+                }
+                public void Add(string key, IDisposable disposable)
+                {
+                    if (key == null) throw new ArgumentNullException(nameof(key));
+                    if (disposable == null) throw new ArgumentNullException(nameof(disposable));
+                    lock (_disposables)
+                    {
+                        if (_disposed) throw new ObjectDisposedException(nameof(JoinedDisposable));
+                        if (_disposables.ContainsKey(key))
+                        {
+                            try
+                            {
+                                _disposables[key]?.Dispose();
+                            }
+                            catch
+                            {
+                                // Ignored.
+                            }
+                        }
+                        _disposables[key] = disposable;
+                    }
+                }
+                private bool _disposed = false;
+                public void Dispose()
+                {
+                    lock (_disposables)
+                    {
+                        if (_disposed) return;
+                        _disposed = true;
+                        foreach (var item in _disposables)
+                        {
+                            try
+                            {
+                                item.Value?.Dispose();
+                            }
+                            catch
+                            {
+                                // Ignored.
+                            }
+                        }
+                    }
+                }
+            }
+            public SubscriptionResult(IMessenger messenger)
+            {
+                _messenger = messenger;
+            }
+
+            protected override async Task ExecuteAsync(HttpContext context, WebSocket socket)
+            {
+                await Task.Yield();
+                SemaphoreSlim socketSemaphore = new SemaphoreSlim(1, 1);
+                async void handler(object sender, object e)
+                {
+                    await socketSemaphore.WaitAsync(context.RequestAborted);
+                    try
+                    {
+                        if (socket.State != WebSocketState.Open) return;
+                        await socket.SendObjectAsync(e, context.RequestAborted).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        // Ignored.
+                    }
+                    finally
+                    {
+                        socketSemaphore.Release();
+                    }
+                }
+                var subscription = Guid.NewGuid().ToString("n");
+
+                using (var subscriptions = new JoinedDisposable())
+                {
+                    subscriptions.Add(string.Empty, _messenger.Subscribe($"WebSocket.{subscription}", handler));
+                    await socket.SendObjectAsync(new {
+                        @event = "Connected",
+                        data = null as object
+                    });
+                    while (socket.State == WebSocketState.Open)
+                    {
+                        var result = await socket.ReadObjectAsync<JObject>(context.RequestAborted);
+                        if (result == null) continue;
+                        if (result.TryGetValue("subscribe", StringComparison.OrdinalIgnoreCase, out var subscribeTo))
+                        {
+                            HandleSubscribes(subscribeTo, subscription, subscriptions);
+                        }
+                        if (result.TryGetValue("unsubscribe", StringComparison.OrdinalIgnoreCase, out var unsubscribeFrom))
+                        {
+                            HandleUnsubscribes(unsubscribeFrom, subscription, subscriptions);
+                        }
+
+                    }
+                }
+            }
+
+
+            private void HandleUnsubscribes(JToken unsubscribeFrom, string subscription, JoinedDisposable subscriptions)
+            {
+                if (unsubscribeFrom.Type == JTokenType.String)
+                {
+                    HandleUnsubscribe(unsubscribeFrom.ToObject<string>(), subscription, subscriptions);
+                }
+                else if (unsubscribeFrom.Type == JTokenType.Array)
+                {
+                    var jarray = (JArray)unsubscribeFrom;
+                    foreach (var item in jarray.Children().OfType<JValue>().Where(i => i.Type == JTokenType.String).Select(x => x.ToObject<string>()))
+                    {
+                        HandleUnsubscribe(item, subscription, subscriptions);
+                    }
+                }
+            }
+
+            void HandleUnsubscribe(string unsubscribeFrom, string subscription, JoinedDisposable subscriptions)
+            {
+                subscriptions.Remove(unsubscribeFrom);
+            }
+
+            private void HandleSubscribes(JToken subscribeTo, string subscription, JoinedDisposable subscriptions)
+            {
+                if (subscribeTo.Type == JTokenType.String)
+                {
+                    HandleSubscribe(subscribeTo.ToObject<string>(), subscription, subscriptions);
+                }
+                else if (subscribeTo.Type == JTokenType.Array)
+                {
+                    var jarray = (JArray)subscribeTo;
+                    foreach (var item in jarray.Children().OfType<JValue>().Where(i => i.Type == JTokenType.String).Select(x => x.ToObject<string>()))
+                    {
+                        HandleSubscribe(item, subscription, subscriptions);
+                    }
+                }
+            }
+
+            private void HandleSubscribe(string item, string subscription, JoinedDisposable subscriptions)
+            {
+                void handler(object sender, object data) => _messenger.Publish($"WebSocket.{subscription}", sender, new
+                {
+                    @event = item,
+                    data
+                });
+                subscriptions.Add(item, _messenger.Subscribe($"Public.{item}", handler));
+            }
+        }
         public class WebSocketResult : IActionResult
         {
             private readonly Func<HttpContext, WebSocket, Task> _callback;
+            protected WebSocketResult()
+            {
+
+            }
+            protected virtual Task ExecuteAsync(HttpContext context, WebSocket socket)
+            {
+                return _callback.Invoke(context, socket);
+            }
             public WebSocketResult(Func<HttpContext, WebSocket, Task> callback)
             {
                 _callback = callback;
@@ -38,102 +221,15 @@ namespace BurstPool.Controllers
                     return;
                 }
                 var socket = await context.HttpContext.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
-                await _callback(context.HttpContext, socket);
-                await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Request Finished", context.HttpContext.RequestAborted);
+                await ExecuteAsync(context.HttpContext, socket);
+                if (socket.State == WebSocketState.Open)
+                    await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Request Finished", context.HttpContext.RequestAborted);
             }
         }
-        [HttpGet("subscribe/{id}")]
-        public async Task<IActionResult> Subscribe(ulong id)
+        [HttpGet("")]
+        public async Task<IActionResult> Subscribe()
         {
-            return new WebSocketResult(async (httpContext, socket) =>
-            {
-                decimal lastAverage = -1;
-                decimal lastBest = -1;
-                decimal lastWorst = -1;
-                long lastHeight = -1;
-                while (socket.State == WebSocketState.Open)
-                {
-                    await Task.Delay(5000, httpContext.RequestAborted);
-                    int counter = 0;
-                    object toSend = null;
-                    using (var scope = _scopeFactory.CreateScope())
-                    {
-                        var context = scope.ServiceProvider.GetRequiredService<PoolContext>();
-                        var currentBlock = await _blockHeightTracker.GetCurrentBlockHeightAsync(httpContext.RequestAborted).ConfigureAwait(false);
-                        if (!long.TryParse(currentBlock.Height, out var height)) continue;
-                        height = height - 360; // Rewind 360 blocks.
-                        var rawData = await context.Shares.Where(i => i.AccountId == id && i.BlockId >= height).GroupBy(i => i.BlockId).Select(x => x.OrderByDescending(i => i.ShareValue).First()).ToListAsync(httpContext.RequestAborted).ConfigureAwait(false);
-                        var data = rawData.Select(i => i.ShareValue).ToList();
-                        var averageShares = data.DefaultIfEmpty(0m).Sum() / 360m;;
-                        var bestShare = data.DefaultIfEmpty(0m).Max();
-                        var worstShare = data.DefaultIfEmpty(0m).Min();
-                        var bestDeadline = rawData.OrderBy(i => i.Deadline).FirstOrDefault();
-                        var worstDeadline = rawData.OrderByDescending(i => i.Deadline).FirstOrDefault();
-                        var recentDeadline = rawData.OrderBy(i => i.Created).FirstOrDefault();
-                        var bestShareData = rawData.OrderByDescending(i => i.ShareValue).FirstOrDefault();
-                        var worstShareData = rawData.OrderBy(i => i.ShareValue).FirstOrDefault();
-                        var recentHeight = recentDeadline?.BlockId ?? -1;
-                        if (lastHeight == recentHeight && averageShares == lastAverage && lastBest == bestShare && lastWorst == worstShare && counter < 30)
-                        {
-                            counter += 1;
-                            continue;
-                        }
-                        counter = 0;
-                        lastAverage = averageShares;
-                        lastBest = bestShare;
-                        lastWorst = worstShare;
-                        lastHeight = recentHeight;
-                        toSend = new
-                        {
-                            accountId = id,
-                            averageShares,
-                            best = new
-                            {
-                                deadline = new
-                                {
-                                    height = bestDeadline?.BlockId,
-                                    nonce = bestDeadline?.Nonce,
-                                    deadline = bestDeadline?.Deadline,
-                                    shares = bestDeadline?.ShareValue
-                                },
-                                share = new
-                                {
-                                    height = bestShareData?.BlockId,
-                                    nonce = bestShareData?.Nonce,
-                                    deadline = bestShareData?.Deadline,
-                                    shares = bestShareData?.ShareValue
-                                }
-                            },
-                            worst = new
-                            {
-                                deadline = new
-                                {
-                                    height = worstDeadline?.BlockId,
-                                    nonce = worstDeadline?.Nonce,
-                                    deadline = worstDeadline?.Deadline,
-                                    shares = worstDeadline?.ShareValue
-                                },
-                                share = new
-                                {
-                                    height = worstShareData?.BlockId,
-                                    nonce = worstShareData?.Nonce,
-                                    deadline = worstShareData?.Deadline,
-                                    shares = worstShareData?.ShareValue
-                                }
-                            },
-                            last = new
-                            {
-                                height = recentDeadline?.BlockId,
-                                nonce = recentDeadline?.Nonce,
-                                deadline = recentDeadline?.Deadline,
-                                shares = recentDeadline?.ShareValue
-                            }
-                        };
-                    }
-                    if (toSend != null)
-                        await socket.SendObjectAsync(toSend, httpContext.RequestAborted).ConfigureAwait(false);
-                }
-            });
+            return new SubscriptionResult(_messenger);
         }
     }
 }

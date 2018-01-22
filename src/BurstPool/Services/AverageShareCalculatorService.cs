@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Concurrent;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using BurstPool.Database;
 using BurstPool.Database.Models;
+using BurstPool.Messages;
 using BurstPool.Services.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -19,13 +21,16 @@ namespace BurstPool.Services
         private IServiceScopeFactory ScopeFactory { get; }
         private IConfiguration Configuration { get; }
         private IBlockHeightTracker BlockHeightTracker { get; }
-        public AverageShareCalculatorService(IBlockHeightTracker blockHeightTracker, IConfiguration configuration, ILoggerFactory loggerFactory, IServiceScopeFactory scopeFactory)
+        private IMessenger Messenger { get; }
+
+        public AverageShareCalculatorService(IBlockHeightTracker blockHeightTracker, IConfiguration configuration, ILoggerFactory loggerFactory, IServiceScopeFactory scopeFactory, IMessenger messenger)
         {
             Logger = loggerFactory.CreateLogger("Averager");
             Configuration = configuration;
             ScopeFactory = scopeFactory;
             BlockHeightTracker = blockHeightTracker;
             BlockHeightTracker.MiningInfoChanged += OnMiningInfoChanged;
+            Messenger = messenger;
         }
         ManualResetEventSlim _resetEvent = new ManualResetEventSlim(true);
         private void OnMiningInfoChanged(object sender, EventArgs e)
@@ -42,17 +47,19 @@ namespace BurstPool.Services
             {
                 try
                 {
-                    while (!_resetEvent.IsSet)
+                    if (!_resetEvent.IsSet)
                     {
-                        await Task.Delay(TimeSpan.FromSeconds(1), stopCancellationToken);
+                        _resetEvent.Wait(TimeSpan.FromMinutes(1), stopCancellationToken);
                     }
                     var currentBlock = await BlockHeightTracker.GetCurrentBlockHeightAsync(stopCancellationToken);
                     var currentPassHeight = long.Parse(currentBlock.Height);
-                    if (!await HandleCurrentPassAsync(currentPassHeight - 2, stopCancellationToken) && currentPassHeight == lastPassHeight)
+                    if (!await HandleCurrentPassAsync(currentPassHeight - 1, stopCancellationToken) && currentPassHeight == lastPassHeight)
                     {
-                        lock (_resetEvent)
-                            if (_resetEvent.IsSet)
-                                _resetEvent.Reset();
+                        var blockAfterPass = await BlockHeightTracker.GetCurrentBlockHeightAsync(stopCancellationToken);
+                        if (blockAfterPass.Height == currentBlock.Height)
+                            lock (_resetEvent)
+                                if (_resetEvent.IsSet)
+                                    _resetEvent.Reset();
                     }
                     lastPassHeight = currentPassHeight;
                 }
@@ -75,13 +82,16 @@ namespace BurstPool.Services
 
             while (true)
             {
+                long height = 0;
                 using (var scope = ScopeFactory.CreateScope())
                 {
                     var db = scope.ServiceProvider.GetRequiredService<PoolContext>();
-                    var nextBlock = await db.BlockStates.Where(i => !i.SharesAveraged && i.Height <= currentPassHeight).OrderBy(i => i.Height).FirstOrDefaultAsync();
-                    if (nextBlock == null) return processedAny;
+                    
                     using (var transaction = await db.Database.BeginTransactionAsync(cancellationToken))
                     {
+                        var nextBlock = await db.BlockStates.Where(i => !i.SharesAveraged && i.Height <= currentPassHeight).OrderBy(i => i.Height).FirstOrDefaultAsync();
+                        if (nextBlock == null) return processedAny;
+                        height = nextBlock.Height;
                         await ProcessBlockAsync(nextBlock.Height, db, cancellationToken).ConfigureAwait(false);
                         processedAny = true;
                         nextBlock.SharesAveraged = true;
@@ -89,6 +99,7 @@ namespace BurstPool.Services
                         transaction.Commit();
                     }
                 }
+                await Messenger.PublishAsync("Block.State.Averaged", this, new BlockStateChangedMessage(height)).ConfigureAwait(false);
             }
         }
         private int Period => Configuration.GetSection("Pool").GetValue<int>("SMAPeriod");
@@ -119,11 +130,5 @@ namespace BurstPool.Services
             await db.SaveChangesAsync(cancellationToken);
         }
 
-        private async Task ProcessSingleAccountAsync(ulong account, long passHeight, PoolContext db, CancellationToken cancellationToken)
-        {
-            var lastHeight = 0L;
-            var lastAverageEntry = await db.AccountAverageShareHistory.Where(i => i.AccountId == account && i.Height <= passHeight).OrderByDescending(i => i.Height).FirstOrDefaultAsync(cancellationToken);
-            var lastComputedBlockState = await db.BlockStates.Where(i => i.Height <= passHeight && !i.SharesAveraged).Select(i => i.Height).ToListAsync(cancellationToken);
-        }
     }
 }

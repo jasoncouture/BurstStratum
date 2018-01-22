@@ -32,6 +32,7 @@ namespace BurstPool
             services.AddBackgroundJobSingleton<IBlockHeightTracker, BlockHeightTracker>();
             services.AddBackgroundJobSingleton<AverageShareCalculatorService>();
             services.AddBackgroundJobSingleton<BlockStateTracker>();
+            services.AddSingleton<IMessenger>(provider => Messenger.Instance);
             services.AddSingleton<IShareCalculator, ShareCalculator>();
             services.AddSingleton<IBurstUriFactory, BurstUriFactory>();
             services.AddSingleton<IBurstApi, BurstApi>();
